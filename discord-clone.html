@@ -1,0 +1,1098 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Discord Clone (Ably Power)</title>
+    <!-- Подключаем библиотеку Ably CDN -->
+    <script src="https://cdn.ably.com/lib/ably.min-1.js"></script>
+    <!-- Подключаем иконки FontAwesome для схожести с Дискордом -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <style>
+        /* Общие настройки стиля под Discord Dark Theme */
+        :root {
+            --bg-servers: #202225;
+            --bg-channels: #2f3136;
+            --bg-chat: #36393f;
+            --bg-users: #2f3136;
+            --bg-search: #202225;
+            --text-main: #dcddde;
+            --text-muted: #72767d;
+            --online-green: #3ba55d;
+            --discord-blue: #5865f2;
+            --bg-input: #40444b;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            -webkit-user-select: none;
+            user-select: none;
+        }
+
+        body, html {
+            height: 100%;
+            width: 100%;
+            overflow: hidden;
+            background-color: var(--bg-chat);
+            color: var(--text-main);
+        }
+
+        /* Окно авторизации */
+        #login-screen {
+            display: flex;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: #1e1f22;
+            z-index: 999;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+        }
+
+        .login-box {
+            background: #313338;
+            padding: 40px;
+            border-radius: 8px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+            width: 100%;
+            max-width: 400px;
+            text-align: center;
+        }
+
+        .login-box h2 {
+            margin-bottom: 8px;
+            color: #fff;
+        }
+
+        .login-box p {
+            color: var(--text-muted);
+            margin-bottom: 20px;
+            font-size: 14px;
+        }
+
+        .input-group {
+            margin-bottom: 20px;
+            text-align: left;
+        }
+
+        .input-group label {
+            display: block;
+            color: var(--text-muted);
+            font-size: 12px;
+            font-weight: bold;
+            text-transform: uppercase;
+            margin-bottom: 8px;
+        }
+
+        .input-group input {
+            width: 100%;
+            padding: 10px;
+            background: #1e1f22;
+            border: 1px solid #1e1f22;
+            border-radius: 4px;
+            color: #fff;
+            font-size: 16px;
+            outline: none;
+        }
+
+        .input-group input:focus {
+            border-color: var(--discord-blue);
+        }
+
+        .login-btn {
+            width: 100%;
+            padding: 12px;
+            background: var(--discord-blue);
+            color: white;
+            border: none;
+            border-radius: 4px;
+            font-size: 16px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: background 0.2s;
+        }
+
+        .login-btn:hover {
+            background: #4752c4;
+        }
+
+        /* Главный контейнер приложения */
+        #app-container {
+            display: flex;
+            width: 100%;
+            height: 100%;
+            visibility: hidden; /* Покажем после логина */
+        }
+
+        /* Панель 1: Серверы (Самая левая) */
+        .sidebar-servers {
+            width: 72px;
+            background-color: var(--bg-servers);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding-top: 12px;
+            gap: 8px;
+            flex-shrink: 0;
+        }
+
+        .server-icon {
+            width: 48px;
+            height: 48px;
+            background-color: #36393f;
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            color: #fff;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            position: relative;
+        }
+
+        .server-icon:hover, .server-icon.active {
+            border-radius: 30%;
+            background-color: var(--discord-blue);
+        }
+
+        .server-icon::before {
+            content: '';
+            position: absolute;
+            left: -12px;
+            top: 18px;
+            width: 8px;
+            height: 12px;
+            background: #fff;
+            border-radius: 0 4px 4px 0;
+            transition: all 0.2s;
+            transform: scaleX(0);
+        }
+
+        .server-icon:hover::before, .server-icon.active::before {
+            transform: scaleX(1);
+            height: 20px;
+            top: 14px;
+        }
+
+        .server-separator {
+            width: 32px;
+            height: 2px;
+            background: #36393f;
+            margin: 4px 0;
+        }
+
+        /* Панель 2: Каналы */
+        .sidebar-channels {
+            width: 240px;
+            background-color: var(--bg-channels);
+            display: flex;
+            flex-direction: column;
+            flex-shrink: 0;
+        }
+
+        .server-header {
+            height: 48px;
+            border-bottom: 1px solid #202225;
+            display: flex;
+            align-items: center;
+            padding: 0 16px;
+            font-weight: bold;
+            color: #fff;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+        }
+
+        .channels-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 8px;
+        }
+
+        .channel-category {
+            color: var(--text-muted);
+            font-size: 12px;
+            font-weight: bold;
+            text-transform: uppercase;
+            margin: 16px 0 4px 8px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .channel-item {
+            display: flex;
+            align-items: center;
+            padding: 6px 8px;
+            border-radius: 4px;
+            color: var(--text-muted);
+            cursor: pointer;
+            margin-bottom: 2px;
+            font-size: 15px;
+        }
+
+        .channel-item:hover, .channel-item.active {
+            background-color: rgba(79, 84, 92, 0.32);
+            color: var(--text-main);
+        }
+
+        .channel-item i {
+            margin-right: 6px;
+            font-size: 18px;
+        }
+
+        /* Голосовой статус внутри канала */
+        .voice-users {
+            margin-left: 24px;
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+
+        .voice-user {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            margin-top: 4px;
+            color: #b9bbbe;
+        }
+
+        .voice-avatar {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: #5865f2;
+        }
+
+        /* Блок профиля внизу каналов */
+        .user-profile-footer {
+            height: 52px;
+            background-color: #292b2f;
+            display: flex;
+            align-items: center;
+            padding: 0 8px;
+            justify-content: space-between;
+        }
+
+        .profile-info {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            overflow: hidden;
+        }
+
+        .profile-avatar {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            background: var(--discord-blue);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            color: white;
+            font-weight: bold;
+            position: relative;
+        }
+
+        .status-dot {
+            position: absolute;
+            bottom: 0;
+            right: 0;
+            width: 10px;
+            height: 10px;
+            background: var(--online-green);
+            border-radius: 50%;
+            border: 2px solid #292b2f;
+        }
+
+        .profile-name-tag {
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .profile-username {
+            font-size: 14px;
+            font-weight: bold;
+            color: #fff;
+            white-space: nowrap;
+            text-overflow: ellipsis;
+            overflow: hidden;
+        }
+
+        .profile-status-text {
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+
+        .profile-controls {
+            display: flex;
+            gap: 12px;
+            color: var(--text-muted);
+            cursor: pointer;
+        }
+
+        .profile-controls i:hover {
+            color: var(--text-main);
+        }
+
+        /* Центральная панель чата */
+        .chat-container {
+            flex: 1;
+            background-color: var(--bg-chat);
+            display: flex;
+            flex-direction: column;
+            position: relative;
+        }
+
+        .chat-header {
+            height: 48px;
+            border-bottom: 1px solid #202225;
+            display: flex;
+            align-items: center;
+            padding: 0 16px;
+            font-weight: bold;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+            gap: 8px;
+        }
+
+        .chat-header i {
+            color: var(--text-muted);
+        }
+
+        .chat-messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .message {
+            display: flex;
+            gap: 16px;
+        }
+
+        .message-avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: #7289da;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            color: white;
+            font-weight: bold;
+            flex-shrink: 0;
+        }
+
+        .message-content {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .message-user-info {
+            display: flex;
+            align-items: baseline;
+            gap: 8px;
+        }
+
+        .message-username {
+            font-weight: 600;
+            color: #fff;
+            font-size: 15px;
+        }
+
+        .message-timestamp {
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+
+        .message-text {
+            color: var(--text-main);
+            font-size: 15px;
+            margin-top: 4px;
+            word-break: break-word;
+            -webkit-user-select: text;
+            user-select: text;
+        }
+
+        .chat-input-area {
+            padding: 0 16px 24px 16px;
+            background-color: var(--bg-chat);
+        }
+
+        .chat-input-wrapper {
+            background-color: var(--bg-input);
+            border-radius: 8px;
+            padding: 10px 16px;
+            display: flex;
+            align-items: center;
+        }
+
+        .chat-input-wrapper input {
+            width: 100%;
+            background: transparent;
+            border: none;
+            outline: none;
+            color: var(--text-main);
+            font-size: 16px;
+        }
+
+        /* Правая панель: Пользователи и Поиск */
+        .sidebar-users {
+            width: 240px;
+            background-color: var(--bg-users);
+            display: flex;
+            flex-direction: column;
+            flex-shrink: 0;
+        }
+
+        .search-box-container {
+            height: 48px;
+            padding: 0 12px;
+            display: flex;
+            align-items: center;
+            border-bottom: 1px solid #202225;
+        }
+
+        .search-wrapper {
+            background-color: var(--bg-search);
+            width: 100%;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            padding: 4px 8px;
+        }
+
+        .search-wrapper input {
+            background: transparent;
+            border: none;
+            outline: none;
+            color: #fff;
+            font-size: 14px;
+            width: 100%;
+            padding-left: 6px;
+        }
+
+        .users-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 16px 8px;
+        }
+
+        .user-section-title {
+            color: var(--text-muted);
+            font-size: 12px;
+            font-weight: bold;
+            text-transform: uppercase;
+            margin-bottom: 8px;
+            padding-left: 8px;
+        }
+
+        .member-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 6px 8px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-bottom: 2px;
+        }
+
+        .member-item:hover {
+            background-color: rgba(79, 84, 92, 0.32);
+        }
+
+        .member-avatar {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            background: #a53ba5;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            color: #fff;
+            font-weight: bold;
+            font-size: 14px;
+        }
+
+        .member-name {
+            font-weight: 500;
+            font-size: 15px;
+            color: var(--text-muted);
+        }
+
+        .member-item.online .member-name {
+            color: #fff;
+        }
+
+        /* Кнопка открытия мобильного меню (бургер) */
+        .mobile-menu-toggle {
+            display: none;
+            font-size: 20px;
+            color: var(--text-main);
+            margin-right: 12px;
+            cursor: pointer;
+        }
+
+        /* --- АДАПТИВНОСТЬ (АВТОРАЗМЕР ПОД ЭКРАН) --- */
+        @media (max-width: 900px) {
+            .sidebar-users {
+                display: none; /* Прячем список пользователей на экранах поменьше */
+            }
+        }
+
+        @media (max-width: 600px) {
+            .mobile-menu-toggle {
+                display: block;
+            }
+
+            /* Изначально прячем левые сайдбары на мобилках */
+            .sidebar-servers, .sidebar-channels {
+                position: fixed;
+                top: 0;
+                bottom: 0;
+                z-index: 100;
+                transition: transform 0.3s ease;
+            }
+
+            .sidebar-servers {
+                left: 0;
+                transform: translateX(-100%);
+            }
+
+            .sidebar-channels {
+                left: 72px;
+                transform: translateX(-200%);
+            }
+
+            /* Класс для открытия меню */
+            body.menu-open .sidebar-servers {
+                transform: translateX(0);
+            }
+            body.menu-open .sidebar-channels {
+                transform: translateX(0);
+            }
+            
+            /* Затемнение контента при открытом меню */
+            body.menu-open .chat-container::after {
+                content: '';
+                position: absolute;
+                top: 0; left: 0; right: 0; bottom: 0;
+                background: rgba(0,0,0,0.5);
+                z-index: 50;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- ЭКРАН ВХОДА -->
+    <div id="login-screen">
+        <div class="login-box">
+            <h2>С возвращением!</h2>
+            <p>Мы так рады за вас!</p>
+            
+            <div class="input-group">
+                <label>Ваш Никнейм</label>
+                <input type="text" id="nickname-input" placeholder="Например, DiscordMaster" required>
+            </div>
+
+            <div class="input-group">
+                <label>API Ключ Ably</label>
+                <input type="password" id="ably-key-input" placeholder="Вставьте ваш API Ключ Ably" required>
+            </div>
+
+            <button class="login-btn" onclick="initApp()">Вход</button>
+        </div>
+    </div>
+
+    <!-- ОСНОВНОЙ ИНТЕРФЕЙС -->
+    <div id="app-container">
+        
+        <!-- НАВИГАЦИЯ ПО СЕРВЕРАМ -->
+        <div class="sidebar-servers">
+            <div class="server-icon active" data-server="server-1" title="Геймеры">🎮</div>
+            <div class="server-icon" data-server="server-2" title="Программисты">💻</div>
+            <div class="server-separator"></div>
+            <div class="server-icon" style="background: var(--online-green);" title="Создать сервер">+</div>
+        </div>
+
+        <!-- СПИСОК КАНАЛОВ И ТЕКУЩИЙ СЕРВЕР -->
+        <div class="sidebar-channels">
+            <div class="server-header">
+                <span id="current-server-name">Игровой Сервер</span>
+            </div>
+            
+            <div class="channels-list">
+                <div class="channel-category">Текстовые каналы</div>
+                
+                <div class="channel-item active" data-channel="general" onclick="switchChannel('general', 'text')">
+                    <i class="fa-solid : #">#</i> general
+                </div>
+                <div class="channel-item" data-channel="memes" onclick="switchChannel('memes', 'text')">
+                    <i class="fa-solid : #">#</i> мемы
+                </div>
+                <div class="channel-item" data-channel="flood" onclick="switchChannel('flood', 'text')">
+                    <i class="fa-solid : #">#</i> флудилка
+                </div>
+
+                <div class="channel-category">Голосовые каналы</div>
+                
+                <div class="channel-item" data-channel="voice-room-1" onclick="switchChannel('voice-room-1', 'voice')">
+                    <i class="fa-solid fa-volume-high"></i> Таверна
+                </div>
+                <div id="voice-users-list-1" class="voice-users">
+                    <!-- Сюда динамически попадают говорящие -->
+                </div>
+
+                <div class="channel-item" data-channel="voice-room-2" onclick="switchChannel('voice-room-2', 'voice')">
+                    <i class="fa-solid fa-volume-high"></i> AFK комната
+                </div>
+                <div id="voice-users-list-2" class="voice-users">
+                    <!-- Сюда динамически попадают говорящие -->
+                </div>
+            </div>
+
+            <!-- ПОДВАЛ ПРОФИЛЯ -->
+            <div class="user-profile-footer">
+                <div class="profile-info">
+                    <div class="profile-avatar" id="my-avatar">
+                        U
+                        <div class="status-dot"></div>
+                    </div>
+                    <div class="profile-name-tag">
+                        <span class="profile-username" id="my-username">Username</span>
+                        <span class="profile-status-text">В сети</span>
+                    </div>
+                </div>
+                <div class="profile-controls">
+                    <i class="fa-solid fa-microphone" title="Вкл/Выкл микрофон" id="mic-btn" onclick="toggleMic()"></i>
+                    <i class="fa-solid fa-headphones" title="Вкл/Выкл звук"></i>
+                    <i class="fa-solid fa-gear" title="Настройки"></i>
+                </div>
+            </div>
+        </div>
+
+        <!-- ОКНО ЧАТА -->
+        <div class="chat-container" onclick="closeMobileMenu()">
+            <div class="chat-header">
+                <div class="mobile-menu-toggle" onclick="toggleMobileMenu(event)">
+                    <i class="fa-solid fa-bars"></i>
+                </div>
+                <i class="fa-solid : #">#</i>
+                <span id="chat-header-title">general</span>
+            </div>
+
+            <!-- Область сообщений чата -->
+            <div class="chat-messages" id="chat-messages-box">
+                <!-- Сообщения генерируются скриптом -->
+            </div>
+
+            <!-- Поле ввода сообщений -->
+            <div class="chat-input-area">
+                <div class="chat-input-wrapper">
+                    <input type="text" id="message-input" placeholder="Отправить сообщение в #general" onkeypress="handleKeyPress(event)">
+                </div>
+            </div>
+        </div>
+
+        <!-- СПИСОК ПОЛЬЗОВАТЕЛЕЙ (И ПОИСК) -->
+        <div class="sidebar-users">
+            <div class="search-box-container">
+                <div class="search-wrapper">
+                    <i class="fa-solid fa-magnifying-glass" style="color: var(--text-muted); font-size: 12px;"></i>
+                    <input type="text" id="search-user-input" placeholder="Поиск по нику" oninput="filterUsers()">
+                </div>
+            </div>
+
+            <div class="users-list">
+                <div class="user-section-title">В сети — <span id="online-count">0</span></div>
+                <div id="members-online-box">
+                    <!-- Сюда рендерятся пользователи онлайн через Ably Presence -->
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- ЛОГИКА НА JAVASCRIPT -->
+    <script>
+        // Глобальные переменные состояния приложения
+        let ablyClient = null;
+        let currentTextChannel = 'general';
+        let currentServer = 'server-1';
+        let currentVoiceChannel = null;
+        
+        let globalUsername = 'User';
+        let activeChannelObject = null;
+        let presenceChannelObject = null;
+        
+        let onlineMembersArray = []; // Хранилище списка пользователей онлайн
+        let isMuted = false;
+
+        // Карта серверов и их названий
+        const serverNames = {
+            'server-1': 'Геймеры',
+            'server-2': 'Программисты'
+        };
+
+        // Запуск приложения после авторизации
+        function initApp() {
+            const nicknameInput = document.getElementById('nickname-input').value.trim();
+            const ablyKeyInput = document.getElementById('ably-key-input').value.trim();
+
+            if (!nicknameInput) {
+                alert('Пожалуйста, введите никнейм!');
+                return;
+            }
+            if (!ablyKeyInput) {
+                alert('Пожалуйста, введите ваш API Ключ Ably!');
+                return;
+            }
+
+            globalUsername = nicknameInput;
+
+            // Настройка отображения профиля пользователя на нижней панели
+            document.getElementById('my-username').innerText = globalUsername;
+            document.getElementById('my-avatar').firstChild.textContent = globalUsername.substring(0, 2).toUpperCase();
+
+            // Инициализация Ably с переданным ключом и clientId
+            try {
+                ablyClient = new Ably.Realtime({
+                    key: ablyKeyInput,
+                    clientId: globalUsername // Важно для работы Presence (кто онлайн)
+                });
+
+                // Слушаем состояние подключения к Ably
+                ablyClient.connection.on('connected', () => {
+                    console.log('Успешно подключено к Ably Realtime!');
+                    document.getElementById('login-screen').style.display = 'none';
+                    document.getElementById('app-container').style.visibility = 'visible';
+                    
+                    // Заходим на дефолтный сервер и канал
+                    connectToChannels();
+                });
+
+                ablyClient.connection.on('failed', () => {
+                    alert('Ошибка подключения! Проверьте правильность вашего API ключа.');
+                });
+
+            } catch (error) {
+                alert('Критическая ошибка инициализации Ably: ' + error.message);
+            }
+        }
+
+        // Подключение к каналам связи Ably (Чат + Пользователи)
+        function connectToChannels() {
+            // Уникальное имя канала строится как: ИмяСервера-ИмяКанала
+            const ablyChannelName = `${currentServer}-${currentTextChannel}`;
+            const globalPresenceChannelName = `${currentServer}-global-presence`;
+
+            // Обновляем заголовок инпута ввода
+            document.getElementById('message-input').placeholder = `Отправить сообщение в #${currentTextChannel}`;
+            document.getElementById('chat-header-title').innerText = currentTextChannel;
+
+            // Очищаем окно сообщений при переходе
+            document.getElementById('chat-messages-box').innerHTML = '';
+
+            // 1. Подключаемся к текстовому чату
+            activeChannelObject = ablyClient.channels.get(ablyChannelName);
+            
+            // Подписываемся на входящие сообщения
+            activeChannelObject.subscribe('msg', (message) => {
+                renderIncomingMessage(message.data.user, message.data.text, message.timestamp);
+            });
+
+            // Получаем историю сообщений (последние 20 штук)
+            activeChannelObject.history({ limit: 20 }, (err, page) => {
+                if (!err && page) {
+                    // История приходит от новых к старым, разворачиваем массив
+                    const historyMessages = page.items.reverse();
+                    historyMessages.forEach((msg) => {
+                        renderIncomingMessage(msg.data.user, msg.data.text, msg.timestamp);
+                    });
+                }
+            });
+
+            // 2. Подключаемся к глобальному Presence-каналу сервера для отслеживания списка "В сети"
+            presenceChannelObject = ablyClient.channels.get(globalPresenceChannelName);
+            
+            // Входим в присутствие канала, сообщая всем свой никнейм и состояние
+            presenceChannelObject.presence.enter({ voiceState: currentVoiceChannel });
+
+            // Подписываемся на любые изменения присутствия (вход, выход, обновление данных)
+            presenceChannelObject.presence.subscribe(() => {
+                updatePresenceList();
+            });
+
+            // Первичный запрос списка тех, кто уже внутри
+            updatePresenceList();
+        }
+
+        // Сбор и обновление списка пользователей в сети
+        function updatePresenceList() {
+            if (!presenceChannelObject) return;
+
+            presenceChannelObject.presence.get((err, members) => {
+                if (err) {
+                    console.error('Не удалось получить список пользователей:', err);
+                    return;
+                }
+
+                // Сохраняем участников в глобальный массив
+                onlineMembersArray = members;
+                
+                // Рендерим отфильтрованный список
+                renderUsersUI(onlineMembersArray);
+                
+                // Обновляем голосовые комнаты на базе данных Presence
+                renderVoiceRoomsUI(members);
+            });
+        }
+
+        // Рендеринг списка пользователей на правой панели
+        function renderUsersUI(membersList) {
+            const membersBox = document.getElementById('members-online-box');
+            membersBox.innerHTML = '';
+            
+            document.getElementById('online-count').innerText = membersList.length;
+
+            membersList.forEach((member) => {
+                const nick = member.clientId;
+                const initials = nick.substring(0, 2).toUpperCase();
+
+                const memberItem = document.createElement('div');
+                memberItem.className = 'member-item online';
+                memberItem.innerHTML = `
+                    <div class="member-avatar">${initials}</div>
+                    <div class="member-name">${nick}</div>
+                `;
+                membersBox.appendChild(memberItem);
+            });
+        }
+
+        // Поиск/фильтрация пользователей по никнейму
+        function filterUsers() {
+            const searchQuery = document.getElementById('search-user-input').value.toLowerCase().trim();
+            
+            const filtered = onlineMembersArray.filter(member => {
+                return member.clientId.toLowerCase().includes(searchQuery);
+            });
+
+            renderUsersUI(filtered);
+        }
+
+        // Обновление отображения голосовых каналов
+        function renderVoiceRoomsUI(members) {
+            // Очищаем старые списки голосовых юзеров
+            document.getElementById('voice-users-list-1').innerHTML = '';
+            document.getElementById('voice-users-list-2').innerHTML = '';
+
+            members.forEach(member => {
+                // Проверяем, находится ли пользователь в голосовом канале на данном сервере
+                if (member.data && member.data.voiceState) {
+                    const targetRoomId = member.data.voiceState;
+                    let container = null;
+
+                    if (targetRoomId === 'voice-room-1') {
+                        container = document.getElementById('voice-users-list-1');
+                    } else if (targetRoomId === 'voice-room-2') {
+                        container = document.getElementById('voice-users-list-2');
+                    }
+
+                    if (container) {
+                        const userDiv = document.createElement('div');
+                        userDiv.className = 'voice-user';
+                        userDiv.innerHTML = `
+                            <div class="voice-avatar" style="display:flex;align-items:center;justify-content:center;font-size:10px;color:white;font-weight:bold;">
+                                ${member.clientId.substring(0,1).toUpperCase()}
+                            </div>
+                            <span>${member.clientId}</span>
+                        `;
+                        container.appendChild(userDiv);
+                    }
+                }
+            });
+        }
+
+        // Отправка текстового сообщения в Ably
+        function sendMessage() {
+            const inputElement = document.getElementById('message-input');
+            const messageText = inputElement.value.trim();
+
+            if (!messageText || !activeChannelObject) return;
+
+            // Публикуем событие в канал Ably
+            activeChannelObject.publish('msg', {
+                user: globalUsername,
+                text: messageText
+            }, (err) => {
+                if (err) {
+                    console.error('Ошибка отправки сообщения через Ably:', err);
+                }
+            });
+
+            inputElement.value = ''; // Очищаем поле
+        }
+
+        // Перехват нажатия Enter в инпуте
+        function handleKeyPress(event) {
+            if (event.key === 'Enter') {
+                sendMessage();
+            }
+        }
+
+        // Добавление сообщения в блок UI
+        function renderIncomingMessage(senderName, text, timestamp) {
+            const chatBox = document.getElementById('chat-messages-box');
+            
+            // Превращаем временную метку Unix в читаемое время
+            const messageDate = timestamp ? new Date(timestamp) : new Date();
+            const timeString = messageDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+            const initials = senderName.substring(0, 2).toUpperCase();
+
+            const messageElement = document.createElement('div');
+            messageElement.className = 'message';
+            messageElement.innerHTML = `
+                <div class="message-avatar">${initials}</div>
+                <div class="message-content">
+                    <div class="message-user-info">
+                        <span class="message-username">${senderName}</span>
+                        <span class="message-timestamp">Сегодня, в ${timeString}</span>
+                    </div>
+                    <div class="message-text">${escapeHTML(text)}</div>
+                </div>
+            `;
+
+            chatBox.appendChild(messageElement);
+            // Автопрокрутка вниз к новым сообщениям
+            chatBox.scrollTop = chatBox.scrollHeight;
+        }
+
+        // Переключение каналов (текстовых и симуляция голосовых)
+        function switchChannel(channelId, type) {
+            if (type === 'text') {
+                if (channelId === currentTextChannel) return;
+
+                // Отписываемся от старого текстового канала
+                if (activeChannelObject) {
+                    activeChannelObject.unsubscribe();
+                }
+
+                // Переключаем ID текущего канала в UI
+                document.querySelectorAll('.channel-item').forEach(item => {
+                    if(item.innerText.includes('#')) {
+                        item.classList.remove('active');
+                    }
+                });
+                event.currentTarget.classList.add('active');
+
+                currentTextChannel = channelId;
+                connectToChannels(); // Переподключаемся к новой сессии
+            } else if (type === 'voice') {
+                // Если кликнули на ту же голосовую комнату — выходим из неё
+                if (currentVoiceChannel === channelId) {
+                    currentVoiceChannel = null;
+                    event.currentTarget.classList.remove('active');
+                } else {
+                    // Снимаем активность с других голосовых каналов
+                    document.querySelectorAll('.channel-item').forEach(item => {
+                        if(item.querySelector('.fa-volume-high')) {
+                            item.classList.remove('active');
+                        }
+                    });
+                    
+                    currentVoiceChannel = channelId;
+                    event.currentTarget.classList.add('active');
+                }
+
+                // Обновляем наши данные в Presence, чтобы остальные увидели нас в голосовом канале
+                if (presenceChannelObject) {
+                    presenceChannelObject.presence.update({ voiceState: currentVoiceChannel });
+                }
+            }
+        }
+
+        // Переключение между серверами (левые круглые иконки)
+        document.querySelectorAll('.server-icon[data-server]').forEach(icon => {
+            icon.addEventListener('click', (e) => {
+                const targetServer = e.currentTarget.getAttribute('data-server');
+                if (targetServer === currentServer) return;
+
+                document.querySelectorAll('.server-icon').forEach(i => i.classList.remove('active'));
+                e.currentTarget.classList.add('active');
+
+                // Покидаем старый канал присутствия
+                if (presenceChannelObject) {
+                    presenceChannelObject.presence.leave();
+                }
+                if (activeChannelObject) {
+                    activeChannelObject.unsubscribe();
+                }
+
+                currentServer = targetServer;
+                currentVoiceChannel = null; // При смене сервера сбрасываем голос
+                
+                document.getElementById('current-server-name').innerText = serverNames[currentServer];
+                
+                // Возвращаемся на дефолтный текстовый канал general на новом сервере
+                currentTextChannel = 'general';
+                
+                // Сбрасываем UI каналов
+                document.querySelectorAll('.channel-item').forEach(item => item.classList.remove('active'));
+                document.querySelector('.channel-item[data-channel="general"]').classList.add('active');
+
+                connectToChannels();
+            });
+        });
+
+        // Симуляция мута микрофона
+        function toggleMic() {
+            isMuted = !isMuted;
+            const micBtn = document.getElementById('mic-btn');
+            if (isMuted) {
+                micBtn.className = 'fa-solid fa-microphone-slash';
+                micBtn.style.color = '#ed4245';
+            } else {
+                micBtn.className = 'fa-solid fa-microphone';
+                micBtn.style.color = 'var(--text-muted)';
+            }
+        }
+
+        // Логика управления адаптивным мобильным меню (бургер)
+        function toggleMobileMenu(event) {
+            event.stopPropagation();
+            document.body.classList.toggle('menu-open');
+        }
+
+        function closeMobileMenu() {
+            if (document.body.classList.contains('menu-open')) {
+                document.body.classList.remove('menu-open');
+            }
+        }
+
+        // Утилита защиты от XSS атак при вводе сообщений
+        function escapeHTML(str) {
+            return str.replace(/[&<>'"]/g, 
+                tag => ({
+                    '&': '&amp;',
+                    '<': '&lt;',
+                    '>': '&gt;',
+                    "'": '&#39;',
+                    '"': '&quot;'
+                }[tag] || tag)
+            );
+        }
+    </script>
+</body>
+</html>
+
